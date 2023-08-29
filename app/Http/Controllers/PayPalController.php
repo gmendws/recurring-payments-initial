@@ -15,6 +15,7 @@ use PayPal\Api\Plan;
 use PayPal\Auth\OAuthTokenCredential;
 use PayPal\Common\PayPalModel;
 use PayPal\Rest\ApiContext;
+use Spatie\FlareClient\Api;
 
 class PayPalController extends Controller
 {
@@ -36,7 +37,7 @@ class PayPalController extends Controller
                 ]
             );
 
-            $agreement = $this->createAgreement($apiContext, $userPremiumPlan);
+            return $this->createAgreement($apiContext, $userPremiumPlan);
 
         } catch (\Exception $e) {
             Log::error('Error during checkout: ' . $e->getMessage());
@@ -131,23 +132,65 @@ class PayPalController extends Controller
         }
     }
 
-    private function createAgreement(ApiContext $apiContext, Plan $createdPlan): Agreement
+    public function createAgreement(ApiContext $apiContext, Plan $plan)
     {
-        $agreement = new Agreement();
+        try {
+            $agreement = new Agreement();
+            $agreement->setName('Assinatura para Plano User Premium')
+                ->setDescription('Assinatura para Plano User Premium')
+                ->setStartDate('2019-06-17T9:45:04Z');
 
-        $agreement->setName('Assinatura para Plano User Premium')
-            ->setDescription('Assinatura para Plano User Premium')
-            ->setStartDate('2019-06-17T9:45:04Z');
+            $agreement->setPlan($plan);
 
-        $plan = new Plan();
-        $plan->setId($createdPlan->getId());
-        $agreement->setPlan($plan);
+            $payer = new Payer();
+            $payer->setPaymentMethod('paypal');
+            $agreement->setPayer($payer);
 
-        $payer = new Payer();
-        $payer->setPaymentMethod('paypal');
-        $agreement->setPayer($payer);
+            $agreement = $agreement->create($apiContext);
 
-        return $agreement->create($apiContext);
+            $userAgreementID = $agreement->getId();
+
+            return $this->redirectUser($agreement->getApprovalLink());
+        } catch (\Exception $e) {
+            Log::error('Error creating agreement: ' . $e->getMessage());
+        }
+    }
+
+    public function executeAgreement(Request $request)
+    {
+        $apiContext = new ApiContext(
+            new OAuthTokenCredential(
+                env('PAYPAL_CLIENT_ID'),
+                env('PAYPAL_SECRET')
+            )
+        );
+
+        if ($request->query('success') === 'true') {
+            $token = $request->query('token');
+            $agreement = new Agreement();
+
+            try {
+                $agreement->execute($token, $apiContext);
+            } catch (\Exception $ex) {
+                return redirect()->route('payment-status')->with('error', 'Erro ao executar a assinatura.');
+            }
+
+            $agreement = Agreement::get($agreement->getId(), $apiContext);
+
+            return redirect()->route('payment-status')->with('success', 'Assinatura ativada com sucesso.')->with('agreement', $agreement);
+        } else {
+            return redirect()->route('payment-status')->with('error', 'Usuário cancelou pagamento/não conseguiu pagar.');
+        }
+    }
+
+    public function paymentStatus()
+    {
+        return view('payment-status');
+    }
+
+    protected function redirectUser($url)
+    {
+        return redirect($url);
     }
 
 }

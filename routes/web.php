@@ -18,6 +18,9 @@ Route::get('/', function () {
     return view('welcome');
 });
 
-Route::get('/checkout', [PayPalController::class, 'checkout']);
+Route::get('/checkout', [PayPalController::class, 'checkout'])->name('checkout');
+Route::get('/payment/execute', [PayPalController::class, 'executeAgreement'])->name('execute-agreement');
+Route::get('/payment/status', [PayPalController::class, 'paymentStatus'])->name('payment-status');
+
 
 
